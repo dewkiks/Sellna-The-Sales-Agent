@@ -1,0 +1,71 @@
+# ============================================================
+# Sellna.ai — backend dependencies (pip)
+#
+# This file mirrors [project.dependencies] in pyproject.toml. If you use
+# uv you do NOT need this file — `uv sync` reads pyproject.toml directly.
+# It exists so the backend can also be installed with plain pip:
+#
+#   cd backend
+#   python -m venv .venv
+#   .venv\Scripts\Activate.ps1          # Windows  (macOS/Linux: source .venv/bin/activate)
+#   pip install -r requirements.txt
+#   playwright install chromium         # one-time browser download
+#
+# See SETUP.md at the repo root for the full install & run guide.
+# ============================================================
+
+# --- Web Framework ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# --- Async / Config ---
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+
+# --- Database ---
+sqlalchemy>=2.0.30
+asyncpg>=0.29.0           # PostgreSQL async driver
+aiosqlite>=0.20.0         # used by the test suite (SQLite async)
+alembic>=1.13.0
+
+# --- Vector Store (RAG) ---
+qdrant-client>=1.9.0
+faiss-cpu>=1.8.0          # local fallback when Qdrant is unavailable
+
+# --- LLM / Embeddings ---
+openai>=1.30.0            # OpenAI-compatible client (also Groq, OpenRouter, etc.)
+sentence-transformers>=2.7.0
+
+# --- Scraping ---
+httpx[http2]>=0.27.0
+beautifulsoup4>=4.12.0
+lxml>=5.2.0
+playwright>=1.44.0        # also run: playwright install chromium
+playwright-stealth>=1.0.6
+brotli>=1.1.0
+
+# --- Security / Auth ---
+python-jose[cryptography]>=3.3.0
+
+# --- Logging ---
+structlog>=24.1.0
+colorama>=0.4.6
+
+# --- Task Queue (optional — pipeline falls back to in-process BackgroundTasks) ---
+redis>=5.0.4
+celery>=5.4.0
+flower>=2.0.1             # Celery monitoring UI (http://localhost:5555)
+
+# --- Observability (optional) ---
+prometheus-fastapi-instrumentator>=7.0.0
+
+# --- Export ---
+openpyxl>=3.1.0
+jinja2>=3.1.0
+
+# --- Testing (dev only) ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+anyio>=4.3.0
