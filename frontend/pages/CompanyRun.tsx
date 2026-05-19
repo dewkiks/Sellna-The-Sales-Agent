@@ -33,6 +33,7 @@ export default function LiveRunPage() {
     setCompanyId,
     setIsRunning,
     setStreamDone,
+    hydrateStream,
     clearStore,
   } = usePipelineStore();
   const runTarget = companyName || draft?.website || "Your domain";
@@ -63,28 +64,65 @@ export default function LiveRunPage() {
     }
   }, [status?.state, status?.company_id, setCompanyId, setIsRunning, setStreamDone]);
 
-  const doneCount = agents.filter((a) => a.status === "done").length;
-  const live = !!jobId && agents.length > 0;
-  const failed = status?.state === "FAILURE";
-  const completedCount = live ? (isDone ? AGENTS.length : doneCount) : 0;
+  // A browser refresh can lose the locally-cached agent stream; restore it
+  // from the server-persisted snapshot whenever the in-memory capture is empty.
+  useEffect(() => {
+    if (!jobId || agents.length > 0) return;
+    let cancelled = false;
+    pipelineApi
+      .getRun(jobId)
+      .then((run) => {
+        if (!cancelled && run.agents?.length) {
+          hydrateStream(jobId, run.agents, run.active_agent, run.done);
+        }
+      })
+      .catch(() => {
+        /* no snapshot recorded for this job yet — nothing to restore */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
 
-  const agentStatus = (i: number): AgentStatus => {
-    if (isDone) return "completed";
-    if (!live || failed) return i < completedCount ? "completed" : "pending";
-    return i < completedCount
-      ? "completed"
-      : i === completedCount
-        ? "running"
-        : "pending";
+  const doneCount = agents.filter((a) => a.status === "done").length;
+  const hasStream = agents.length > 0;
+  const live = !!jobId && hasStream;
+  const failed = status?.state === "FAILURE";
+
+  /* ---- agent rows ----
+     Once a run has begun we list the agents that actually streamed — their
+     count and order vary per run (e.g. the social agent only runs when there
+     are social targets). Before the first run we fall back to the static
+     9-agent line-up as a preview. Driving the rows from the live stream means
+     every selectable row maps to real captured output, so a finished run can
+     never show a phantom "this agent hasn't started yet". */
+  type AgentRowData = { id: number; name: string; desc: string };
+  const rows: AgentRowData[] = hasStream
+    ? agents.map((a, i) => ({
+        id: i + 1,
+        name: a.label || a.name,
+        desc: a.status === "done" || isDone ? "Completed" : "Streaming live",
+      }))
+    : AGENTS.map((a) => ({ id: a.id, name: a.name, desc: a.desc }));
+  const totalCount = hasStream ? rows.length : AGENTS.length;
+  const completedCount = isDone ? rows.length : hasStream ? doneCount : 0;
+
+  const rowStatus = (i: number): AgentStatus => {
+    const a = agents[i];
+    if (!a) return "pending";
+    if (a.status === "done" || isDone) return "completed";
+    return failed ? "pending" : "running";
   };
 
   /* ---- the agent currently being previewed ---- */
-  const autoIndex = live ? Math.min(completedCount, AGENTS.length - 1) : 0;
-  const focusIndex = selectedIdx ?? autoIndex;
-  const focusMeta = AGENTS[focusIndex];
-  // streamed agents arrive in pipeline order, so index lines up with AGENTS
-  const focusAgent = agents[focusIndex];
-  const focusLabel = focusAgent?.label || focusMeta.name;
+  const autoIndex = hasStream ? rows.length - 1 : 0;
+  const focusIndex = Math.min(
+    selectedIdx ?? autoIndex,
+    Math.max(0, rows.length - 1),
+  );
+  const focusAgent = hasStream ? agents[focusIndex] : undefined;
+  const focusLabel = focusAgent?.label || rows[focusIndex]?.name || "Agent";
   const focusStarted = !!focusAgent;
   const focusStreaming = focusStarted && focusAgent.status !== "done" && !isDone;
   const tokenText = focusAgent?.tokens || "";
@@ -109,9 +147,9 @@ export default function LiveRunPage() {
   useTopBarSlot(
     <span className="pill live">
       <span className="dot" />
-      {isDone ? "Complete" : "Streaming"} · {completedCount} of {AGENTS.length}
+      {isDone ? "Complete" : "Streaming"} · {completedCount} of {totalCount}
     </span>,
-    [isDone, completedCount],
+    [isDone, completedCount, totalCount],
   );
 
   return (
@@ -153,9 +191,14 @@ export default function LiveRunPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14 }}>
-        <Card title="Agents" subtitle="9 specialists · click to preview">
+        <Card
+          title="Agents"
+          subtitle={`${totalCount} ${
+            hasStream ? "agents" : "specialists"
+          } · click to preview`}
+        >
           <div style={{ display: "grid", gap: 6 }}>
-            {AGENTS.map((a, i) => (
+            {rows.map((a, i) => (
               <div
                 key={a.id}
                 onClick={() => setSelectedIdx(i)}
@@ -167,7 +210,7 @@ export default function LiveRunPage() {
                   outlineOffset: -2,
                 }}
               >
-                <AgentRow agent={a} status={agentStatus(i)} />
+                <AgentRow agent={a} status={rowStatus(i)} />
               </div>
             ))}
           </div>

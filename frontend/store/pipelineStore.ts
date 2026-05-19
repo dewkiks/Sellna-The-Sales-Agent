@@ -45,6 +45,13 @@ interface PipelineStore {
   applyStreamEvent: (event: StreamEvent) => void;
   /** Mark the stream finished (also clears the active agent). */
   setStreamDone: (done: boolean) => void;
+  /** Restore the captured stream from a server-persisted snapshot. */
+  hydrateStream: (
+    jobId: string,
+    agents: AgentState[],
+    activeAgent: string | null,
+    done: boolean,
+  ) => void;
 
   clearStore: () => void;
 }
@@ -149,6 +156,14 @@ export const usePipelineStore = create<PipelineStore>()(
 
       setStreamDone: (done) =>
         set(done ? { streamDone: true, streamActiveAgent: null } : { streamDone: false }),
+
+      hydrateStream: (jobId, agents, activeAgent, done) =>
+        set({
+          streamJobId: jobId,
+          streamAgents: agents,
+          streamActiveAgent: activeAgent,
+          streamDone: done,
+        }),
 
       applyStreamEvent: (event) => {
         const agents = get().streamAgents;

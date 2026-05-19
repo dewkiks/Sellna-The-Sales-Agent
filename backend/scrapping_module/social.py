@@ -116,7 +116,7 @@ def _scrape_linkedin_via_google(url: str, proxy: str | None) -> dict:
             headers=headers,
             follow_redirects=True,
             timeout=15,
-            proxies=proxy,
+            proxy=proxy,
         ) as client:
             resp = client.get(search_url)
             if resp.status_code != 200:
@@ -401,7 +401,7 @@ def _scrape_instagram_api(url: str, proxy: str | None) -> dict:
             },
             follow_redirects=True,
             timeout=15,
-            proxies=proxy,
+            proxy=proxy,
         ) as client:
             # Step 1: Visit the Instagram homepage to receive session cookies.
             # Instagram sets csrftoken on the first visit; we need it to call the API.
@@ -462,7 +462,7 @@ def _scrape_instagram_json_embed(url: str, proxy: str | None) -> dict:
             },
             follow_redirects=True,
             timeout=15,
-            proxies=proxy,
+            proxy=proxy,
         ) as client:
             resp = client.get(url)
             if resp.status_code != 200:
@@ -664,11 +664,30 @@ def _scrape_instagram_browser(url: str, proxy: str | None) -> dict:
         return {"error": str(e), "url": url}
 
 
+def _ig_is_rich(result: dict) -> bool:
+    """True when an Instagram result carries real profile data.
+
+    The meta-tags fallback in Strategy 2 always echoes a ``username`` taken
+    straight from the URL, so ``username`` alone is not proof of success.
+    A result is only "rich" if it also has followers, an avatar image, or
+    posts — otherwise the orchestrator should escalate to a heavier strategy.
+    """
+    if not result or not result.get("username"):
+        return False
+    return bool(
+        result.get("followers")
+        or result.get("avatar")
+        or result.get("latest_posts")
+    )
+
+
 def _scrape_instagram_sync(url: str, proxy: str | None) -> dict:
     """Orchestrate the three Instagram strategies in order, returning the first success.
 
     Tries the fastest/cheapest strategy first (unofficial API) and escalates
-    to the more expensive browser strategy only if the lighter ones fail.
+    to the more expensive browser strategy when a lighter one returns only a
+    thin result (e.g. just a username with no followers/avatar). A thin result
+    is kept as a fallback in case every strategy comes back light.
 
     Args:
         url:   Instagram profile URL.
@@ -678,26 +697,44 @@ def _scrape_instagram_sync(url: str, proxy: str | None) -> dict:
         Normalised profile dict with a "source" key indicating which strategy
         succeeded, or an error dict if all three strategies failed.
     """
+    # Best thin result seen so far — used only if no strategy returns rich data.
+    fallback: dict = {}
+
     # Strategy 1: Unofficial API (fastest — one HTTP round-trip after cookie grab).
     result = _scrape_instagram_api(url, proxy)
-    if result and result.get("username"):
+    if _ig_is_rich(result):
         result["source"] = "Instagram API"
         return result
+    if result and result.get("username"):
+        fallback = result
 
     # Strategy 2: Embedded JSON / meta tags (medium — one HTTP round-trip).
     result = _scrape_instagram_json_embed(url, proxy)
-    if result and result.get("username"):
-        if "source" not in result:
-            result["source"] = "Page Source"
+    if _ig_is_rich(result):
+        result.setdefault("source", "Page Source")
         return result
+    if result and result.get("username") and not fallback:
+        fallback = result
 
-    # Strategy 3: Headless browser (slowest — full browser launch + render).
+    # Strategy 3: Headless browser (slowest — but the most reliable for public
+    # profiles, since the lighter strategies are frequently rate-limited).
     result = _scrape_instagram_browser(url, proxy)
     if result and result.get("username"):
         result["source"] = "Browser Intercept"
         return result
 
-    return {"error": "Instagram profile could not be scraped. Profile may be private.", "url": url}
+    # Every strategy was blocked or thin — return the best partial data we
+    # collected, otherwise a clear, actionable error.
+    if fallback:
+        fallback.setdefault("source", "meta-tags")
+        return fallback
+    return {
+        "error": (
+            "Instagram profile could not be scraped. It may be private, or "
+            "Instagram is rate-limiting requests — try again shortly."
+        ),
+        "url": url,
+    }
 
 
 # ------------------------------------------------------------------

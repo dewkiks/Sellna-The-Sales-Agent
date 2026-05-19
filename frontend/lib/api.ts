@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { AgentState } from "./agentStream";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api/v1";
@@ -280,6 +281,15 @@ export interface CompetitorListResponse {
   }>;
 }
 
+/** Durable snapshot of a run's agent stream, restored after a page refresh. */
+export interface PersistedRunResponse {
+  job_id: string;
+  company_id: string | null;
+  agents: AgentState[];
+  active_agent: string | null;
+  done: boolean;
+}
+
 export const pipelineApi = {
   runPipeline: async (
     payload: PipelinePayload
@@ -311,6 +321,13 @@ export const pipelineApi = {
   ): Promise<{ status: string; message: string }> => {
     const response = await apiClient.post<{ status: string; message: string }>(
       `/pipeline/abort/${jobId}`
+    );
+    return response.data;
+  },
+  /** Fetch the server-persisted agent-stream snapshot for a run. */
+  getRun: async (jobId: string): Promise<PersistedRunResponse> => {
+    const response = await apiClient.get<PersistedRunResponse>(
+      `/pipeline/run/${jobId}`
     );
     return response.data;
   },

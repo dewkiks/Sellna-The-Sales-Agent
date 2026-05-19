@@ -118,28 +118,7 @@ function ResultCard({ r }: { r: SocialScrapeResult }) {
         }}
         onClick={() => setOpen((o) => !o)}
       >
-        {p.avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={p.avatar}
-            alt={name}
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: "50%",
-              objectFit: "cover",
-              border: "1px solid var(--border)",
-              flexShrink: 0,
-            }}
-          />
-        ) : (
-          <div
-            className="icon-tile"
-            style={{ width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }}
-          >
-            <Ico.atSign style={{ width: 18, height: 18 }} />
-          </div>
-        )}
+        <ProfileAvatar src={p.avatar} alt={name} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <strong style={{ fontSize: 14 }}>{name}</strong>
@@ -315,19 +294,7 @@ function ResultCard({ r }: { r: SocialScrapeResult }) {
                           background: "#fff",
                         }}
                       >
-                        {post.media_url && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={post.media_url}
-                            alt={post.type || "post"}
-                            style={{
-                              width: "100%",
-                              height: 120,
-                              objectFit: "cover",
-                              background: "var(--bg-muted)",
-                            }}
-                          />
-                        )}
+                        <PostImage src={post.media_url} alt={post.type || "post"} />
                         <div style={{ padding: "8px 10px" }}>
                           <div
                             style={{
@@ -424,6 +391,85 @@ function ResultCard({ r }: { r: SocialScrapeResult }) {
         }
       `}</style>
     </div>
+  );
+}
+
+/**
+ * Profile avatar with a graceful fallback. Instagram/LinkedIn CDN images are
+ * hotlink-protected — `referrerPolicy="no-referrer"` makes their CDNs serve
+ * the image, and `onError` swaps to a neutral tile if it is still blocked.
+ */
+function ProfileAvatar({ src, alt }: { src?: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div
+        className="icon-tile"
+        style={{ width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }}
+      >
+        <Ico.atSign style={{ width: 18, height: 18 }} />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      style={{
+        width: 46,
+        height: 46,
+        borderRadius: "50%",
+        objectFit: "cover",
+        border: "1px solid var(--border)",
+        background: "var(--bg-muted)",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+/**
+ * Square post thumbnail — Instagram posts are square, so a 1:1 tile keeps the
+ * grid uniform. Uses the same no-referrer trick and shows a fallback panel
+ * when the image is missing or blocked.
+ */
+function PostImage({ src, alt }: { src?: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          aspectRatio: "1 / 1",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--bg-muted)",
+          color: "var(--ink-4)",
+        }}
+      >
+        <Ico.layers style={{ width: 22, height: 22 }} />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      style={{
+        display: "block",
+        width: "100%",
+        aspectRatio: "1 / 1",
+        objectFit: "cover",
+        background: "var(--bg-muted)",
+      }}
+    />
   );
 }
 

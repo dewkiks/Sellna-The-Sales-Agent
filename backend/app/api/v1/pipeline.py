@@ -34,8 +34,11 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
+from app.core.dependencies import DbSession
 from app.core.logging import get_logger
+from app.core.run_recorder import RunRecorder
 from app.core.stream_manager import stream_manager
+from app.db.repositories import PipelineRunRepository
 from app.schemas.company import CompanyInput
 
 router = APIRouter(prefix="/pipeline", tags=["Pipeline Orchestration"])
@@ -163,14 +166,48 @@ async def run_pipeline_async(
     # after the HTTP 202 response has been sent to the client.
     async def background_runner(jid: str, data: CompanyInput):
 
-        # stream_cb bridges SalesPipeline's event emitter to stream_manager,
-        # which fans out events to all active SSE subscribers for this job.
+        from app.db.postgres import async_session_factory
+
+        # The recorder folds every stream event into an aggregated per-agent
+        # snapshot, persisted to the DB so the live-run view survives a refresh.
+        recorder = RunRecorder()
+
+        # stream_cb bridges SalesPipeline's event emitter to BOTH the live SSE
+        # fan-out and the durable recorder.
         def pipeline_stream_cb(event: dict) -> None:
+            recorder.apply(event)
             stream_manager.publish(jid, event)
+
+        async def persist_snapshot() -> None:
+            """Write the recorder's current state to the pipeline_runs table."""
+            cid = _LOCAL_JOBS.get(jid, {}).get("company_id")
+            try:
+                company_uuid = uuid.UUID(cid) if cid else None
+            except (ValueError, TypeError):
+                company_uuid = None
+            snap = recorder.snapshot()
+            async with async_session_factory() as session:
+                await PipelineRunRepository(session).upsert(
+                    jid, company_uuid, snap["agents"], snap["active_agent"], snap["done"]
+                )
+                await session.commit()
+
+        async def periodic_persist() -> None:
+            """Snapshot the run to the DB every few seconds while it streams."""
+            try:
+                while True:
+                    await asyncio.sleep(3)
+                    try:
+                        await persist_snapshot()
+                    except Exception:  # noqa: BLE001 — transient; next tick retries
+                        pass
+            except asyncio.CancelledError:
+                pass
+
+        snapshot_task = asyncio.create_task(periodic_persist())
 
         try:
             from app.pipelines.sales_pipeline import SalesPipeline
-            from app.db.postgres import async_session_factory
 
             async with async_session_factory() as session:
                 _LOCAL_JOBS[jid]["status_msg"] = "Processing stages..."
@@ -197,6 +234,15 @@ async def run_pipeline_async(
             _LOCAL_JOBS[jid]["status_msg"] = "Failed"
             stream_manager.publish(jid, {"type": "done", "agent": "pipeline"})
             logger.error(f"Fallback pipeline failed: {e}")
+        finally:
+            # Stop the periodic snapshotter and write one final snapshot so the
+            # finished (or failed) run is durably stored for later restore.
+            snapshot_task.cancel()
+            recorder.done = True
+            try:
+                await persist_snapshot()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Final run snapshot persist failed: {exc}")
 
     # Fire background task
     background_tasks.add_task(background_runner, job_id, payload)
@@ -401,3 +447,31 @@ async def pipeline_result(job_id: str) -> dict:
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.get(
+    "/run/{job_id}",
+    summary="Fetch the persisted live-run snapshot for a job",
+)
+async def get_pipeline_run(job_id: str, db: DbSession) -> dict:
+    """GET /pipeline/run/{job_id}
+
+    Returns the durable agent-stream snapshot for a run — the aggregated
+    per-agent tokens, reasoning, summaries and scrape progress. The frontend
+    uses this to restore the live-run view after a page refresh without
+    depending on browser storage.
+
+    Raises 404 if no snapshot has been recorded for this job.
+    """
+    record = await PipelineRunRepository(db).get(job_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404, detail="No run snapshot found for this job."
+        )
+    return {
+        "job_id": record.job_id,
+        "company_id": str(record.company_id) if record.company_id else None,
+        "agents": record.agents,
+        "active_agent": record.active_agent,
+        "done": record.done,
+    }

@@ -241,6 +241,34 @@ class SocialContactRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PipelineRunRecord(Base):
+    """Durable snapshot of a pipeline run's live agent stream.
+
+    Agents stream tokens/reasoning over SSE; the browser keeps a copy too, but
+    browser storage is size-limited and lost on some refreshes. This table is
+    the authoritative copy so the live-run view can be restored after a refresh
+    or on another device.
+
+    ``agents`` holds the aggregated per-agent state (name, label, status,
+    tokens, reasoning, summary, scrape progress) — the same shape the frontend
+    renders. It is refreshed periodically while the run streams and once more
+    when the run finishes.
+    """
+
+    __tablename__ = "pipeline_runs"
+
+    # job_id is the pipeline run id (UUID string, or a Celery task id).
+    job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    agents: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    active_agent: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ---------------------------------------------------------------------------
 # DB Lifecycle helpers
 # ---------------------------------------------------------------------------

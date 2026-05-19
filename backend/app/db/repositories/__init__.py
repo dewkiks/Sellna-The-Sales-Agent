@@ -28,6 +28,7 @@ from app.db.postgres import (
     MarketGapRecord,
     OutreachRecord,
     PersonaRecord,
+    PipelineRunRecord,
     SocialContactRecord,
     SocialProfileRecord,
 )
@@ -381,3 +382,50 @@ class SocialContactRepository:
             .order_by(SocialContactRecord.created_at.desc())
         )
         return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Run Repository
+# ---------------------------------------------------------------------------
+
+
+class PipelineRunRepository:
+    """CRUD interface for the ``pipeline_runs`` table — durable run snapshots.
+
+    Stores the aggregated agent-stream state for a pipeline run so the live-run
+    view can be restored after a browser refresh.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._db = session
+
+    async def upsert(
+        self,
+        job_id: str,
+        company_id: uuid.UUID | None,
+        agents: list,
+        active_agent: Optional[str],
+        done: bool,
+    ) -> PipelineRunRecord:
+        """Insert or update the snapshot for a job (one row per ``job_id``)."""
+        record = (
+            await self._db.execute(
+                select(PipelineRunRecord).where(PipelineRunRecord.job_id == job_id)
+            )
+        ).scalar_one_or_none()
+        if record is None:
+            record = PipelineRunRecord(job_id=job_id)
+            self._db.add(record)
+        record.company_id = company_id
+        record.agents = agents
+        record.active_agent = active_agent
+        record.done = done
+        await self._db.flush()
+        return record
+
+    async def get(self, job_id: str) -> Optional[PipelineRunRecord]:
+        """Fetch a run snapshot by job id; returns None if absent."""
+        result = await self._db.execute(
+            select(PipelineRunRecord).where(PipelineRunRecord.job_id == job_id)
+        )
+        return result.scalar_one_or_none()
