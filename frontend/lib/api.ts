@@ -588,3 +588,14 @@ export const companyApi = {
     return response.data;
   },
 };
+
+export const exportApi = {
+  /** Download a company's full data set as an .xlsx workbook (binary blob). */
+  companyXlsx: async (companyId: string): Promise<Blob> => {
+    const response = await apiClient.get(
+      `/export/company/${companyId}/xlsx`,
+      { responseType: "blob" }
+    );
+    return response.data as Blob;
+  },
+};

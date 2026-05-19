@@ -6,11 +6,11 @@ import {
   type ReactNode,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ico } from "./icons";
 import { useAuth } from "@/context/AuthContext";
 import { usePipelineStore } from "@/store/pipelineStore";
-import { companyApi } from "@/lib/api";
+import { companyApi, exportApi } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
 export type Crumb = { label: string; href?: string };
@@ -76,6 +76,18 @@ export function TopBar({
   const [wiping, setWiping] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  // Export dropdown — lets the user pick which company's data to download.
+  const exportRef = useRef<HTMLDivElement | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const { data: companiesData } = useQuery({
+    queryKey: ["companies"],
+    queryFn: companyApi.list,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const companies = companiesData?.companies ?? [];
+
   const fullName = user?.full_name || "";
   const email = user?.email || "";
   const initials =
@@ -98,6 +110,45 @@ export function TopBar({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [exportOpen]);
+
+  const handleExport = async (companyId: string, companyName: string) => {
+    if (exportingId) return;
+    setExportingId(companyId);
+    try {
+      const blob = await exportApi.companyXlsx(companyId);
+      const slug =
+        companyName.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") ||
+        "company";
+      // Download the workbook via a throwaway object-URL anchor.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sellna_${slug}_export.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${companyName}`);
+      setExportOpen(false);
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || `Failed to export ${companyName}`
+      );
+    } finally {
+      setExportingId(null);
+    }
+  };
 
   const handleSignOut = () => {
     setOpen(false);
@@ -154,12 +205,77 @@ export function TopBar({
       </div>
       <div className="right">
         {rightExtras}
-        <button className="btn ghost" style={{ padding: "7px 9px" }}>
-          <Ico.bell style={{ width: 15, height: 15 }} />
-        </button>
-        <button className="btn primary">
-          <Ico.share style={{ width: 14, height: 14 }} /> Share
-        </button>
+        <div ref={exportRef} style={{ position: "relative" }}>
+          <button
+            className="btn primary"
+            onClick={() => setExportOpen((o) => !o)}
+          >
+            <Ico.download style={{ width: 14, height: 14 }} /> Export
+          </button>
+
+          {exportOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                right: 0,
+                width: 248,
+                background: "#fff",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                boxShadow: "var(--shadow-3)",
+                padding: 6,
+                zIndex: 50,
+                maxHeight: 320,
+                overflowY: "auto",
+              }}
+            >
+              <div
+                style={{
+                  padding: "6px 10px 8px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  color: "var(--ink-3)",
+                  borderBottom: "1px solid var(--border)",
+                  marginBottom: 4,
+                }}
+              >
+                EXPORT COMPANY DATA
+              </div>
+              {companies.length === 0 ? (
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    fontSize: 12,
+                    color: "var(--ink-3)",
+                  }}
+                >
+                  No companies yet — run an analysis first.
+                </div>
+              ) : (
+                companies.map((c) => (
+                  <MenuItem
+                    key={c.id}
+                    icon={
+                      exportingId === c.id ? (
+                        <span
+                          className="spin"
+                          style={{ width: 12, height: 12 }}
+                        />
+                      ) : (
+                        <Ico.download style={{ width: 14, height: 14 }} />
+                      )
+                    }
+                    label={c.name}
+                    disabled={!!exportingId}
+                    onClick={() => handleExport(c.id, c.name)}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         <div ref={menuRef} style={{ position: "relative" }}>
           <div

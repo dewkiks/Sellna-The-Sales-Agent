@@ -12,7 +12,7 @@ Adding a new domain area requires only:
 
 from fastapi import APIRouter
 
-from app.api.v1 import analytics, auth, chat, company, competitors, dashboard, icp, outreach, personas, pipeline, scrapers, ui
+from app.api.v1 import analytics, auth, chat, company, competitors, dashboard, export, icp, outreach, personas, pipeline, scrapers, ui
 
 # ---- Root router — no prefix here; the /api/v1 prefix is applied in main.py ----
 api_router = APIRouter()
@@ -28,6 +28,7 @@ api_router.include_router(outreach.router)
 api_router.include_router(analytics.router)
 api_router.include_router(pipeline.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(export.router)
 api_router.include_router(scrapers.router)
 api_router.include_router(chat.router)
 api_router.include_router(ui.router)
