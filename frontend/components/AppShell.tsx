@@ -1,5 +1,3 @@
-"use client";
-
 import {
   createContext,
   useContext,
@@ -7,10 +5,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { TopBar, type Crumb } from "./TopBar";
-import { CompanionChat } from "./CompanionChat";
 import { useAuth } from "@/context/AuthContext";
 import { usePipelineStore } from "@/store/pipelineStore";
 
@@ -63,18 +60,20 @@ export function AppShell({
   children: ReactNode;
   gate?: boolean;
 }) {
-  const router = useRouter();
-  const pathname = usePathname() || "";
-  const { user, loading, configured } = useAuth();
+  const navigate = useNavigate();
+  const pathname = useLocation().pathname;
+  const { user, loading } = useAuth();
   const companyName = usePipelineStore((s) => s.companyName);
   const jobId = usePipelineStore((s) => s.jobId);
   const [slot, setSlot] = useState<ReactNode>(null);
 
   useEffect(() => {
-    if (gate && configured && !loading && !user) {
-      router.replace("/");
+    // Unauthenticated visitors to a protected route are sent to the login
+    // screen once the initial token-restore check has settled.
+    if (gate && !loading && !user) {
+      navigate("/login", { replace: true });
     }
-  }, [gate, configured, loading, user, router]);
+  }, [gate, loading, user, navigate]);
 
   if (gate && loading) {
     return (
@@ -92,7 +91,7 @@ export function AppShell({
     );
   }
 
-  if (gate && configured && !user) return null;
+  if (gate && !user) return null;
 
   // First crumb is the active company — fall back to the product name.
   const base = CRUMBS[pathname] || [{ label: "Sellna", href: "/app" }];
@@ -122,7 +121,6 @@ export function AppShell({
             </div>
           </div>
         </div>
-        <CompanionChat />
       </div>
     </TopBarSlotCtx.Provider>
   );

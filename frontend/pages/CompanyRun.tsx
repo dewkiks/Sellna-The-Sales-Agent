@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTopBarSlot } from "@/components/AppShell";
 import { Ico } from "@/components/icons";
@@ -27,7 +25,7 @@ const panelStyle = (mono: boolean): React.CSSProperties => ({
 });
 
 export default function LiveRunPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const {
     jobId,
     companyName,
@@ -146,7 +144,7 @@ export default function LiveRunPage() {
               }
               clearStore();
               agentStream.disconnect();
-              router.push("/app");
+              navigate("/app");
             }}
           >
             <Ico.x style={{ width: 13, height: 13 }} /> Abort run

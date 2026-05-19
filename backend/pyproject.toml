@@ -37,6 +37,8 @@ dependencies = [
     "brotli>=1.1.0",
     # Security / Auth
     "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.1.0",
+    "email-validator>=2.1.0",
     # Logging
     "structlog>=24.1.0",
     "colorama>=0.4.6",

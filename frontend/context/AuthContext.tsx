@@ -1,69 +1,89 @@
-"use client";
-
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react";
-import type { User, Session } from "@supabase/supabase-js";
-import { supabase, supabaseConfigured } from "@/lib/supabase";
+import {
+  authApi,
+  clearToken,
+  getToken,
+  setToken,
+  type AuthUser,
+} from "@/lib/api";
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: AuthUser | null;
+  /** True until the initial token-restore check has finished. */
   loading: boolean;
-  configured: boolean;
-  signOut: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    fullName: string,
+  ) => Promise<void>;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  session: null,
   loading: true,
-  configured: false,
-  signOut: async () => {},
+  login: async () => {},
+  register: async () => {},
+  logout: () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
 
+/**
+ * Local JWT auth provider.
+ *
+ * A successful login/register stores the access token in localStorage (via the
+ * api module) and keeps the resolved user profile in state. On mount the
+ * provider restores any persisted session by calling `/auth/me`; an expired or
+ * invalid token is silently discarded.
+ */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
+    const token = getToken();
+    if (!token) {
       setLoading(false);
       return;
     }
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setUser(nextSession?.user ?? null);
-      setLoading(false);
-    });
-
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    authApi
+      .me()
+      .then((u) => setUser(u))
+      .catch(() => clearToken()) // token expired / invalid — drop it
+      .finally(() => setLoading(false));
   }, []);
 
-  const signOut = async () => {
-    if (supabase) await supabase.auth.signOut();
-  };
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await authApi.login(email, password);
+    setToken(res.access_token);
+    setUser(res.user);
+  }, []);
+
+  const register = useCallback(
+    async (email: string, password: string, fullName: string) => {
+      const res = await authApi.register(email, password, fullName);
+      setToken(res.access_token);
+      setUser(res.user);
+    },
+    [],
+  );
+
+  const logout = useCallback(() => {
+    clearToken();
+    setUser(null);
+  }, []);
 
   return (
-    <AuthContext.Provider
-      value={{ user, session, loading, configured: supabaseConfigured, signOut }}
-    >
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,5 +1,3 @@
-"use client";
-
 import {
   Fragment,
   useEffect,
@@ -7,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ico } from "./icons";
 import { useAuth } from "@/context/AuthContext";
@@ -70,15 +68,15 @@ export function TopBar({
   crumbs?: Crumb[];
   rightExtras?: ReactNode;
 }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user, signOut } = useAuth();
+  const { user, logout } = useAuth();
   const clearStore = usePipelineStore((s) => s.clearStore);
   const [open, setOpen] = useState(false);
   const [wiping, setWiping] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const fullName = (user?.user_metadata?.full_name as string | undefined) || "";
+  const fullName = user?.full_name || "";
   const email = user?.email || "";
   const initials =
     fullName
@@ -101,10 +99,10 @@ export function TopBar({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     setOpen(false);
-    await signOut();
-    router.push("/");
+    logout();
+    navigate("/login");
   };
 
   const handleWipe = async () => {
@@ -138,7 +136,7 @@ export function TopBar({
       <Ico.panel
         className="crumb-icon"
         style={{ cursor: "pointer" }}
-        onClick={() => router.push("/app")}
+        onClick={() => navigate("/app")}
       />
       <div className="crumbs">
         {crumbs.map((c, i) => (
@@ -147,7 +145,7 @@ export function TopBar({
             <span
               className={i === crumbs.length - 1 ? "leaf" : "twig"}
               style={{ cursor: c.href ? "pointer" : "default" }}
-              onClick={c.href ? () => router.push(c.href as string) : undefined}
+              onClick={c.href ? () => navigate(c.href as string) : undefined}
             >
               {c.label}
             </span>

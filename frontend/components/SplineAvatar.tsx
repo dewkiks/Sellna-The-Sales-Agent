@@ -1,4 +1,3 @@
-"use client";
 
 import { createElement, useEffect, useRef, type CSSProperties } from "react";
 

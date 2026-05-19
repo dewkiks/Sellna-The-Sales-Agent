@@ -1,4 +1,3 @@
-"use client";
 
 import type { CSSProperties, ReactNode } from "react";
 import { Ico, type IconComponent } from "./icons";

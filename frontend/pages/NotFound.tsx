@@ -1,11 +1,9 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { Ico } from "@/components/icons";
 
 export default function NotFound() {
-  const router = useRouter();
+  const navigate = useNavigate();
   return (
     <AppShell gate={false}>
       <div
@@ -72,7 +70,7 @@ export default function NotFound() {
           <button className="btn">
             <Ico.search style={{ width: 13, height: 13 }} /> Search docs
           </button>
-          <button className="btn primary" onClick={() => router.push("/app")}>
+          <button className="btn primary" onClick={() => navigate("/app")}>
             <Ico.home style={{ width: 13, height: 13 }} /> Back to dashboard
           </button>
         </div>

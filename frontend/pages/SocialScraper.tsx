@@ -1,4 +1,3 @@
-"use client";
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -407,7 +406,7 @@ function ResultCard({ r }: { r: SocialScrapeResult }) {
         </div>
       )}
 
-      <style jsx>{`
+      <style>{`
         .raw-block {
           margin: 0;
           padding: 12px;

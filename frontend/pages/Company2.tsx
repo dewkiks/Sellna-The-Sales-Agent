@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { Ico } from "@/components/icons";
 import { Card, Steps, AGENTS } from "@/components/primitives";
 import { pipelineApi, type PipelinePayload } from "@/lib/api";
@@ -40,7 +38,7 @@ function Field({
 }
 
 export default function CompanyDetailsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { draft, setDraft, setJobId, setCompanyName, setIsRunning } =
     usePipelineStore();
 
@@ -96,7 +94,7 @@ export default function CompanyDetailsPage() {
       setJobId(res.job_id);
       setIsRunning(true);
       toast.success("Intelligence pipeline initiated — 9 agents activated");
-      router.push("/company/run");
+      navigate("/company/run");
     } catch (e: any) {
       const detail =
         e?.response?.data?.detail ||
@@ -105,7 +103,7 @@ export default function CompanyDetailsPage() {
         "Please ensure the backend is running.";
       toast.error(`Pipeline error: ${detail}`);
       // Still proceed to the live run view so the design flow is visible.
-      router.push("/company/run");
+      navigate("/company/run");
     } finally {
       setBusy(false);
     }
@@ -122,7 +120,7 @@ export default function CompanyDetailsPage() {
             agent&apos;s output.
           </p>
         </div>
-        <button className="btn ghost" onClick={() => router.push("/app")}>
+        <button className="btn ghost" onClick={() => navigate("/app")}>
           <Ico.x style={{ width: 13, height: 13 }} /> Cancel
         </button>
       </div>
@@ -210,7 +208,7 @@ export default function CompanyDetailsPage() {
               gap: 8,
             }}
           >
-            <button className="btn" onClick={() => router.push("/company")}>
+            <button className="btn" onClick={() => navigate("/company")}>
               <Ico.chev
                 style={{ width: 13, height: 13, transform: "rotate(90deg)" }}
               />{" "}

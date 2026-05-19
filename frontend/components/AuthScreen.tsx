@@ -1,19 +1,16 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { Ico, BrandGlyph, type IconComponent } from "./icons";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabase";
 import { toast } from "@/lib/toast";
 
 export function AuthScreen({ mode }: { mode: "signup" | "login" }) {
-  const router = useRouter();
-  const { user, loading, configured } = useAuth();
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (configured && !loading && user) router.replace("/app");
-  }, [configured, loading, user, router]);
+    if (!loading && user) navigate("/app", { replace: true });
+  }, [loading, user, navigate]);
 
   return (
     <div className="site-root">
@@ -35,52 +32,36 @@ export function AuthScreen({ mode }: { mode: "signup" | "login" }) {
 
 function AuthFormPanel({ mode }: { mode: "signup" | "login" }) {
   const isSignup = mode === "signup";
-  const router = useRouter();
+  const navigate = useNavigate();
+  const { login, register } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (!supabase) {
-      toast.error("Auth is not configured — set Supabase env vars.");
-      return;
-    }
     if (!email.trim() || !password) {
       toast.error("Email and password are required.");
+      return;
+    }
+    if (isSignup && password.length < 8) {
+      toast.error("Password must be at least 8 characters.");
       return;
     }
     setBusy(true);
     try {
       if (isSignup) {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: { full_name: fullName },
-            emailRedirectTo:
-              typeof window !== "undefined" ? window.location.origin : undefined,
-          },
-        });
-        if (error) throw error;
-        if (data.session) {
-          toast.success("Account created.");
-          router.push("/app");
-        } else {
-          toast.success("Account created — check your email to confirm.");
-          router.push("/login");
-        }
+        await register(email.trim(), password, fullName.trim());
+        toast.success("Account created.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (error) throw error;
+        await login(email.trim(), password);
         toast.success("Welcome back.");
-        router.push("/app");
       }
+      navigate("/app");
     } catch (e: any) {
-      toast.error(e?.message || "Authentication failed.");
+      toast.error(
+        e?.response?.data?.detail || e?.message || "Authentication failed.",
+      );
     } finally {
       setBusy(false);
     }
@@ -98,7 +79,7 @@ function AuthFormPanel({ mode }: { mode: "signup" | "login" }) {
     >
       <div
         style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
-        onClick={() => router.push("/")}
+        onClick={() => navigate("/")}
       >
         <div className="brand-mark">
           <BrandGlyph />
@@ -259,7 +240,7 @@ function AuthFormPanel({ mode }: { mode: "signup" | "login" }) {
               Already have an account?{" "}
               <a
                 style={{ color: "var(--blue)", fontWeight: 600, cursor: "pointer" }}
-                onClick={() => router.push("/login")}
+                onClick={() => navigate("/login")}
               >
                 Sign in
               </a>
@@ -269,7 +250,7 @@ function AuthFormPanel({ mode }: { mode: "signup" | "login" }) {
               New here?{" "}
               <a
                 style={{ color: "var(--blue)", fontWeight: 600, cursor: "pointer" }}
-                onClick={() => router.push("/signup")}
+                onClick={() => navigate("/signup")}
               >
                 Create an account
               </a>

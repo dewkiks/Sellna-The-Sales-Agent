@@ -61,6 +61,24 @@ class Base(AsyncAttrs, DeclarativeBase):
 # ---------------------------------------------------------------------------
 
 
+class UserRecord(Base):
+    """A registered application user — the identity behind JWT auth.
+
+    Authentication is local (email + password). ``hashed_password`` stores a
+    bcrypt hash, never the plaintext. ``email`` is unique and case-normalised
+    by the auth layer before insert/lookup.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(200), default="")
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="admin", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class CompanyRecord(Base):
     """Root entity — the user-submitted company being analysed.
 

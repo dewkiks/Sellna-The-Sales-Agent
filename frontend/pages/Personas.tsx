@@ -1,7 +1,5 @@
-"use client";
-
 import { useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ico, type IconComponent } from "@/components/icons";
 import { EmptyState } from "@/components/primitives";
@@ -162,7 +160,7 @@ function PersonaCard({ p }: { p: PersonaData }) {
 }
 
 export default function PersonasPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { companyId, companyName, isRunning } = usePipelineStore();
 
@@ -236,7 +234,7 @@ export default function PersonasPage() {
           </button>
           <button
             className="btn primary"
-            onClick={() => router.push("/outreach")}
+            onClick={() => navigate("/outreach")}
           >
             <Ico.send style={{ width: 13, height: 13 }} /> Generate outreach
           </button>

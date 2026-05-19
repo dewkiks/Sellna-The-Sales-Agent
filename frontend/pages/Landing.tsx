@@ -1,7 +1,5 @@
-"use client";
-
 import { useState, type CSSProperties } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { Ico, BrandGlyph, type IconComponent } from "@/components/icons";
 import { NAV, AGENTS, AgentRow } from "@/components/primitives";
 import { DotField } from "@/components/DotField";
@@ -45,7 +43,7 @@ export default function LandingPage() {
 }
 
 function LandingNav() {
-  const router = useRouter();
+  const navigate = useNavigate();
   return (
     <div
       style={{
@@ -74,7 +72,7 @@ function LandingNav() {
           cursor: "pointer",
           pointerEvents: "auto",
         }}
-        onClick={() => router.push("/")}
+        onClick={() => navigate("/")}
       >
         <div className="brand-mark">
           <BrandGlyph />
@@ -117,14 +115,14 @@ function LandingNav() {
         <button
           className="btn ghost"
           style={{ pointerEvents: "auto" }}
-          onClick={() => router.push("/login")}
+          onClick={() => navigate("/login")}
         >
           Log in
         </button>
         <button
           className="btn dark"
           style={{ pointerEvents: "auto" }}
-          onClick={() => router.push("/signup")}
+          onClick={() => navigate("/signup")}
         >
           Start free →
         </button>
@@ -332,12 +330,12 @@ function FloatingTile({
 }
 
 function DomainCTA() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const setDraft = usePipelineStore((s) => s.setDraft);
   const [val, setVal] = useState("acme.com");
   const submit = () => {
     setDraft({ website: val });
-    router.push("/signup");
+    navigate("/signup");
   };
   return (
     <div
@@ -754,7 +752,7 @@ function LandingWorkflow() {
 }
 
 function LandingCTA() {
-  const router = useRouter();
+  const navigate = useNavigate();
   return (
     <div style={{ padding: "80px 40px" }}>
       <div
@@ -818,7 +816,7 @@ function LandingCTA() {
             <button
               className="btn primary"
               style={{ padding: "12px 18px", fontSize: 14 }}
-              onClick={() => router.push("/signup")}
+              onClick={() => navigate("/signup")}
             >
               Start free <Ico.arrow style={{ width: 14, height: 14 }} />
             </button>
@@ -831,7 +829,7 @@ function LandingCTA() {
                 color: "#fff",
                 borderColor: "rgba(255,255,255,.18)",
               }}
-              onClick={() => router.push("/login")}
+              onClick={() => navigate("/login")}
             >
               Book a demo
             </button>

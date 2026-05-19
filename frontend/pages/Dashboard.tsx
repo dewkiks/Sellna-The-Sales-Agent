@@ -1,6 +1,4 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTopBarSlot } from "@/components/AppShell";
 import { Ico, type IconComponent } from "@/components/icons";
@@ -89,11 +87,11 @@ const ACTIVITY_META: Record<string, { icon: IconComponent; tint: string }> = {
 };
 
 export default function DashboardPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { jobId, companyName } = usePipelineStore();
   const { user } = useAuth();
   const firstName =
-    (user?.user_metadata?.full_name as string | undefined)?.split(" ")[0] ||
+    user?.full_name?.split(" ")[0] ||
     user?.email?.split("@")[0] ||
     "";
 
@@ -176,7 +174,7 @@ export default function DashboardPage() {
           <button className="btn">
             <Ico.download style={{ width: 13, height: 13 }} /> Export
           </button>
-          <button className="btn primary" onClick={() => router.push("/company")}>
+          <button className="btn primary" onClick={() => navigate("/company")}>
             <Ico.plus style={{ width: 13, height: 13 }} /> New analysis
           </button>
         </div>

@@ -1,8 +1,5 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ico, BrandGlyph } from "./icons";
 import { NAV, AGENTS } from "./primitives";
@@ -275,9 +272,9 @@ const SAMPLE_RUNS = [
 ];
 
 export function Sidebar() {
-  const router = useRouter();
-  const pathname = usePathname() || "";
-  const go = (path: string) => router.push(path);
+  const navigate = useNavigate();
+  const pathname = useLocation().pathname;
+  const go = (path: string) => navigate(path);
   const { companyId, setCompanyId, setCompanyName, isRunning, jobId, streamJobId } =
     usePipelineStore();
   const { agents, activeAgent, isDone } = useAgentStream(jobId);
@@ -342,8 +339,7 @@ export function Sidebar() {
         return (
           <Link
             key={n.id}
-            href={href}
-            prefetch
+            to={href}
             className={"sb-item" + (activeId === n.id ? " active" : "")}
           >
             <n.icon className="icon" />

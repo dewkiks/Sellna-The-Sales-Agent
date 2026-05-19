@@ -1,7 +1,5 @@
-"use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import { Ico, type IconComponent } from "@/components/icons";
 import { Card, Steps } from "@/components/primitives";
 import { usePipelineStore } from "@/store/pipelineStore";
@@ -16,13 +14,13 @@ const NEXT_STEPS: { i: IconComponent; t: string; d: string }[] = [
 ];
 
 export default function CompanyDomainPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { draft, setDraft } = usePipelineStore();
   const [domain, setDomain] = useState(draft.website || "acme.com");
 
   const cont = () => {
     setDraft({ website: domain });
-    router.push("/company/2");
+    navigate("/company/2");
   };
 
   return (

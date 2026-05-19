@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -38,6 +39,34 @@ from app.config import get_settings
 
 _settings = get_settings()
 _bearer = HTTPBearer(auto_error=False)
+
+
+# ---------------------------------------------------------------------------
+# Password hashing
+# ---------------------------------------------------------------------------
+
+# bcrypt only inspects the first 72 bytes of a password; longer inputs raise
+# in modern bcrypt, so we truncate explicitly to keep hashing deterministic.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _prepare(plain: str) -> bytes:
+    """Encode a password and clamp it to bcrypt's 72-byte working limit."""
+    return plain.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+
+
+def hash_password(plain: str) -> str:
+    """Return a bcrypt hash of ``plain`` suitable for storing in the DB."""
+    return bcrypt.hashpw(_prepare(plain), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """Return True if ``plain`` matches the stored bcrypt ``hashed`` value."""
+    try:
+        return bcrypt.checkpw(_prepare(plain), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        # Malformed/empty stored hash — treat as a failed match, never raise.
+        return False
 
 
 # ---------------------------------------------------------------------------

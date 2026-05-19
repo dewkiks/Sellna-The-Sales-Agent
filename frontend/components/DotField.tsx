@@ -1,4 +1,3 @@
-"use client";
 
 // Antigravity-style repel field — donut-shaped force field around the cursor.
 // When the cursor is idle, a virtual cursor sweeps the field on a slow

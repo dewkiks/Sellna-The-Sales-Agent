@@ -48,6 +48,8 @@ brotli>=1.1.0
 
 # --- Security / Auth ---
 python-jose[cryptography]>=3.3.0
+bcrypt>=4.1.0             # password hashing for local accounts
+email-validator>=2.1.0   # backs pydantic EmailStr in the auth schemas
 
 # --- Logging ---
 structlog>=24.1.0
