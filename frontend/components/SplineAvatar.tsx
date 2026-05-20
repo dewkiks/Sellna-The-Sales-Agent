@@ -2,7 +2,7 @@
 import { createElement, useEffect, useRef, type CSSProperties } from "react";
 
 const SPLINE_URL =
-  "https://prod.spline.design/CUkZYx8TqcIvt8aO/scene.splinecode";
+  "https://prod.spline.design/5e0-yek8RTBZuBPV/scene.splinecode";
 
 export function SplineAvatar({
   size = 160,
