@@ -271,7 +271,7 @@ class SalesPipeline:
             _comp_cb({"type": "agent_start", "label": "Discovering competitors..."})
         competitors: list[CompetitorDiscovered] = await self._run_stage(
             "competitor_discovery",
-            CompetitorAgent().run,
+            lambda inp: CompetitorAgent().run(inp, stream_cb=_comp_cb),
             company_analysis,
             errors,
         ) or []
@@ -324,6 +324,16 @@ class SalesPipeline:
         _web_cb = self._make_agent_cb("WebAgent")
         if _web_cb:
             _web_cb({"type": "agent_start", "label": f"Scraping {len(competitors)} competitor websites..."})
+            _web_cb({
+                "type": "token",
+                "content": (
+                    f"→ Launching {len(competitors)} parallel scrapes\n"
+                    f"  render_js={self._render_js}\n"
+                    f"  targets:\n"
+                    + "".join(f"   - {c.name} ({c.website})\n" for c in competitors)
+                    + "\n"
+                ),
+            })
         web_agent = WebAgent(proxy=self._proxy, render_js=self._render_js)
         web_data: list[CompetitorWebData] = []
         scraped_count = 0
@@ -345,11 +355,32 @@ class SalesPipeline:
                     await self._db.commit()
                     if _web_cb:
                         _web_cb({"type": "scrape_tick", "url": wd.website, "count": scraped_count, "total": len(competitors)})
+                        if wd.scrape_success:
+                            _web_cb({
+                                "type": "token",
+                                "content": (
+                                    f"[{scraped_count}/{len(competitors)}] ✓ {wd.website}\n"
+                                    f"    features={len(wd.features or [])} · "
+                                    f"pricing_tiers={len(wd.pricing_tiers or [])} · "
+                                    f"paragraphs={len(wd.raw_paragraphs or [])}\n"
+                                    f"    value_prop: {(wd.value_proposition or '')[:120]}\n"
+                                ),
+                            })
+                        else:
+                            _web_cb({
+                                "type": "token",
+                                "content": (
+                                    f"[{scraped_count}/{len(competitors)}] ✗ {wd.website}\n"
+                                    f"    error: {wd.error or 'unknown'}\n"
+                                ),
+                            })
                     if self._on_progress:
                         self._on_progress(status=f"Scraped {wd.website}", progress=self._get_stage_progress("web_intelligence"), company_id=str(self._company_id))
                 except Exception as e:
                     logger.error("pipeline.web_intel.error", error=str(e))
                     errors.append(f"Scrape failed: {e}")
+                    if _web_cb:
+                        _web_cb({"type": "token", "content": f"[!] scrape error: {e}\n"})
         if _web_cb:
             _web_cb({
                 "type": "agent_done",
@@ -397,6 +428,17 @@ class SalesPipeline:
             _social_cb({
                 "type": "agent_start",
                 "label": f"Discovering social profiles across {len(social_targets)} subjects...",
+            })
+            _social_cb({
+                "type": "token",
+                "content": (
+                    f"→ {len(social_targets)} subjects queued\n"
+                    + "".join(
+                        f"   - {sn} ({st}) — {sw}\n"
+                        for st, _sid, sn, sw in social_targets
+                    )
+                    + "→ Crawling homepage + team/about/contact pages for each\n\n"
+                ),
             })
 
         if social_targets:
@@ -470,6 +512,16 @@ class SalesPipeline:
                             + len(subj.people)
                             + len(subj.emails),
                         })
+                        _social_cb({
+                            "type": "token",
+                            "content": (
+                                f"✓ {subj.subject_name} ({subj.subject_type})\n"
+                                f"    accounts={len(subj.profiles)} · "
+                                f"people={len(subj.people)} · "
+                                f"emails={len(subj.emails)} · "
+                                f"phones={len(subj.phones)}\n"
+                            ),
+                        })
                     if self._on_progress:
                         self._on_progress(
                             status=f"Social profiles for {subj.subject_name}",
@@ -479,6 +531,8 @@ class SalesPipeline:
                 except Exception as e:
                     logger.error("pipeline.social_intel.error", error=str(e))
                     errors.append(f"Social intelligence failed: {e}")
+                    if _social_cb:
+                        _social_cb({"type": "token", "content": f"[!] social fetch error: {e}\n"})
 
         total_accounts = sum(len(s.profiles) for s in social_subjects)
         total_people = sum(len(s.people) for s in social_subjects)
@@ -521,7 +575,7 @@ class SalesPipeline:
             _clean_cb({"type": "agent_start", "label": "Cleaning and structuring web data..."})
         clean_data: list[CompetitorCleanData] = await self._run_stage(
             "data_cleaning",
-            CleaningAgent().run,
+            lambda inp: CleaningAgent().run(inp, stream_cb=_clean_cb),
             web_data,
             errors,
         ) or []
@@ -541,7 +595,7 @@ class SalesPipeline:
             _gap_cb({"type": "agent_start", "label": "Analyzing market gaps from competitor data..."})
         gaps: list[MarketGap] = await self._run_stage(
             "gap_analysis",
-            lambda: GapAnalysisAgent().run(company_analysis, clean_data),
+            lambda: GapAnalysisAgent().run(company_analysis, clean_data, stream_cb=_gap_cb),
             None,
             errors,
             no_arg=True,
@@ -604,11 +658,32 @@ class SalesPipeline:
         persona_repo = PersonaRepository(self._db)
         personas: list[BuyerPersona] = []
 
+        # Emit agent_start/done at the pipeline level — the parallel
+        # generate_for_icp() invocations do not, so without this PersonaAgent
+        # never appears in the live UI and its tokens would be dropped.
+        _persona_cb = self._make_agent_cb("PersonaAgent")
+        if _persona_cb and icps:
+            _persona_cb({
+                "type": "agent_start",
+                "label": f"Building {self._num_personas} personas for each of {len(icps)} ICPs...",
+            })
+            _persona_cb({
+                "type": "token",
+                "content": (
+                    f"→ {len(icps)} ICPs queued · {self._num_personas} personas each\n"
+                    + "".join(
+                        f"   - {icp.industry or 'ICP'} · {icp.buyer_authority or '?'}\n"
+                        for icp in icps
+                    )
+                    + f"→ RAG collection: {rag_collection}\n\n"
+                ),
+            })
+
         if icps:
             logger.info("pipeline.persona_gen.start", count=len(icps))
             # One coroutine per ICP, all run concurrently.  asyncio.as_completed
             # saves each ICP's personas to the DB as soon as they are ready.
-            persona_tasks = [persona_agent.generate_for_icp(company_analysis, icp, self._num_personas, rag_collection, stream_cb=self._make_agent_cb("PersonaAgent")) for icp in icps]
+            persona_tasks = [persona_agent.generate_for_icp(company_analysis, icp, self._num_personas, rag_collection, stream_cb=_persona_cb) for icp in icps]
             for future in asyncio.as_completed(persona_tasks):
                 try:
                     p_list = await future
@@ -620,11 +695,39 @@ class SalesPipeline:
                             persona_data=p.model_dump(mode="json"),
                         )
                     await self._db.commit()
+                    if _persona_cb and p_list:
+                        titles = ", ".join(p.title for p in p_list)
+                        _persona_cb({
+                            "type": "token",
+                            "content": f"✓ ICP done · {len(p_list)} personas: {titles}\n",
+                        })
                     if self._on_progress:
                         self._on_progress(status=f"Generated {len(p_list)} personas", progress=self._get_stage_progress("persona_generation"), company_id=str(self._company_id))
                 except Exception as e:
                     logger.error("pipeline.persona_gen.error", error=str(e))
                     errors.append(f"Persona generation failed: {e}")
+                    if _persona_cb:
+                        _persona_cb({"type": "token", "content": f"[!] persona error: {e}\n"})
+
+        if _persona_cb and icps:
+            titles = ", ".join(p.title for p in personas[:3])
+            _persona_cb({
+                "type": "agent_done",
+                "summary": f"{len(personas)} personas · {titles}",
+                "result": {
+                    "personas": [
+                        {
+                            "title": p.title,
+                            "seniority": p.seniority,
+                            "messaging_tone": p.messaging_tone,
+                            "pain_points": p.pain_points[:3],
+                            "buying_triggers": p.buying_triggers[:2],
+                            "preferred_channels": p.preferred_channels[:3],
+                        }
+                        for p in personas
+                    ]
+                },
+            })
 
         if icps and not personas:
             warnings.append(

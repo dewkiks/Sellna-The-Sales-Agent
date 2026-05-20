@@ -4,6 +4,8 @@ import type {
   PipelineResultResponse,
   PipelineStatusResponse,
   PipelinePayload,
+  SocialScrapeResult,
+  WebScrapeResult,
 } from "@/lib/api";
 import type { AgentState, StreamEvent } from "@/lib/agentStream";
 
@@ -52,6 +54,12 @@ interface PipelineStore {
     activeAgent: string | null,
     done: boolean,
   ) => void;
+
+  /* ---- scraper-tool results — persisted so they survive navigation/refresh ---- */
+  socialScrape: { url: string; result: SocialScrapeResult | null };
+  setSocialScrape: (s: { url: string; result: SocialScrapeResult | null }) => void;
+  webScrape: { url: string; result: WebScrapeResult | null };
+  setWebScrape: (s: { url: string; result: WebScrapeResult | null }) => void;
 
   clearStore: () => void;
 }
@@ -164,6 +172,11 @@ export const usePipelineStore = create<PipelineStore>()(
           streamActiveAgent: activeAgent,
           streamDone: done,
         }),
+
+      socialScrape: { url: "", result: null },
+      setSocialScrape: (s) => set({ socialScrape: s }),
+      webScrape: { url: "", result: null },
+      setWebScrape: (s) => set({ webScrape: s }),
 
       applyStreamEvent: (event) => {
         const agents = get().streamAgents;
@@ -280,6 +293,8 @@ export const usePipelineStore = create<PipelineStore>()(
         streamAgents: state.streamAgents,
         streamActiveAgent: state.streamActiveAgent,
         streamDone: state.streamDone,
+        socialScrape: state.socialScrape,
+        webScrape: state.webScrape,
       }),
     },
   ),

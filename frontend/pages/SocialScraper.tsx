@@ -3,6 +3,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Ico } from "@/components/icons";
 import {
+  API_ROOT,
   scrapersApi,
   type CompanySocialSubject,
   type PipelinePerson,
@@ -395,32 +396,49 @@ function ResultCard({ r }: { r: SocialScrapeResult }) {
 }
 
 /**
- * Profile avatar with a graceful fallback. Instagram/LinkedIn CDN images are
- * hotlink-protected — `referrerPolicy="no-referrer"` makes their CDNs serve
- * the image, and `onError` swaps to a neutral tile if it is still blocked.
+ * Route a social-CDN image through the backend proxy. Instagram and LinkedIn
+ * hotlink-protect their image hosts, so the browser cannot load the scraped
+ * URLs directly — the proxy fetches them server-side and relays the bytes
+ * from the API's own origin.
  */
-function ProfileAvatar({ src, alt }: { src?: string; alt: string }) {
+function proxiedImage(url: string): string {
+  return `${API_ROOT}/scrapers/image-proxy?url=${encodeURIComponent(url)}`;
+}
+
+/**
+ * Profile avatar with a graceful fallback. The image is served via the backend
+ * proxy so hotlink-protected CDN images load; `onError` swaps to a neutral
+ * tile if the image is missing or the proxy fails.
+ */
+function ProfileAvatar({
+  src,
+  alt,
+  size = 46,
+}: {
+  src?: string;
+  alt: string;
+  size?: number;
+}) {
   const [failed, setFailed] = useState(false);
   if (!src || failed) {
     return (
       <div
         className="icon-tile"
-        style={{ width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }}
+        style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0 }}
       >
-        <Ico.atSign style={{ width: 18, height: 18 }} />
+        <Ico.atSign style={{ width: size * 0.4, height: size * 0.4 }} />
       </div>
     );
   }
   return (
     <img
-      src={src}
+      src={proxiedImage(src)}
       alt={alt}
       loading="lazy"
-      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       style={{
-        width: 46,
-        height: 46,
+        width: size,
+        height: size,
         borderRadius: "50%",
         objectFit: "cover",
         border: "1px solid var(--border)",
@@ -433,8 +451,8 @@ function ProfileAvatar({ src, alt }: { src?: string; alt: string }) {
 
 /**
  * Square post thumbnail — Instagram posts are square, so a 1:1 tile keeps the
- * grid uniform. Uses the same no-referrer trick and shows a fallback panel
- * when the image is missing or blocked.
+ * grid uniform. Served via the image proxy; shows a fallback panel when the
+ * image is missing or blocked.
  */
 function PostImage({ src, alt }: { src?: string; alt: string }) {
   const [failed, setFailed] = useState(false);
@@ -457,10 +475,9 @@ function PostImage({ src, alt }: { src?: string; alt: string }) {
   }
   return (
     <img
-      src={src}
+      src={proxiedImage(src)}
       alt={alt}
       loading="lazy"
-      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       style={{
         display: "block",
@@ -527,6 +544,7 @@ function ProfileRow({ p }: { p: PipelineSocialProfile }) {
           cursor: "pointer",
         }}
       >
+        <ProfileAvatar src={d.avatar} alt={label} size={30} />
         <span
           className={"pill " + (p.platform === "Instagram" ? "violet" : "blue")}
         >
@@ -847,9 +865,13 @@ function PipelineSocials() {
 /* ---------- page ---------- */
 
 export default function SocialScraperPage() {
-  const [url, setUrl] = useState("");
+  // The scrape result lives in the persisted store so it survives navigating
+  // away and back (and a page refresh) instead of being component-local state.
+  const socialScrape = usePipelineStore((s) => s.socialScrape);
+  const setSocialScrape = usePipelineStore((s) => s.setSocialScrape);
+  const [url, setUrl] = useState(() => socialScrape.url);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<SocialScrapeResult | null>(null);
+  const result = socialScrape.result;
 
   const run = async () => {
     const u = url.trim();
@@ -862,10 +884,10 @@ export default function SocialScraperPage() {
       return;
     }
     setLoading(true);
-    setResult(null);
+    setSocialScrape({ url: u, result: null });
     try {
       const data = await scrapersApi.social(u);
-      setResult(data);
+      setSocialScrape({ url: u, result: data });
       if (data.success) toast.success(`${data.platform} profile scraped`);
       else toast.error(data.error || "Scrape failed");
     } catch (e: any) {

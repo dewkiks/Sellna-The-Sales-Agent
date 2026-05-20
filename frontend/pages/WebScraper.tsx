@@ -643,21 +643,26 @@ function PipelineWebData() {
 /* ---------- page ---------- */
 
 export default function WebScraperPage() {
-  const [url, setUrl] = useState("");
+  // The scrape result lives in the persisted store so it survives navigating
+  // away and back (and a page refresh) instead of being component-local state.
+  const webScrape = usePipelineStore((s) => s.webScrape);
+  const setWebScrape = usePipelineStore((s) => s.setWebScrape);
+  const [url, setUrl] = useState(() => webScrape.url);
   const [renderJs, setRenderJs] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<WebScrapeResult | null>(null);
+  const result = webScrape.result;
 
   const run = async () => {
-    if (!url.trim()) {
+    const u = url.trim();
+    if (!u) {
       toast.error("Enter a URL to scrape");
       return;
     }
     setLoading(true);
-    setResult(null);
+    setWebScrape({ url: u, result: null });
     try {
-      const data = await scrapersApi.web(url.trim(), renderJs);
-      setResult(data);
+      const data = await scrapersApi.web(u, renderJs);
+      setWebScrape({ url: u, result: data });
       if (data.success) toast.success("Page scraped");
       else toast.error(data.error || "Scrape failed");
     } catch (e: any) {

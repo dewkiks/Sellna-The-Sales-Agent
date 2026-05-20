@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from app.config import get_settings
@@ -154,6 +155,8 @@ class RAGService:
         system_prompt: str = "",
         top_k: int = 5,
         json_mode: bool = False,
+        on_token: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
     ) -> str:
         """Execute the full RAG cycle: retrieve → augment → generate (Steps 2 + 3).
 
@@ -196,7 +199,12 @@ class RAGService:
             },
         ]
 
-        answer = await self._llm.chat(messages, json_mode=json_mode)
+        answer = await self._llm.chat(
+            messages,
+            json_mode=json_mode,
+            on_token=on_token,
+            on_reasoning=on_reasoning,
+        )
         logger.info("rag.query.complete", collection=collection, chunks_used=len(chunks))
         return answer
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 
 from app.core.logging import get_logger
 from app.schemas.competitor import CompetitorCleanData, CompetitorWebData
@@ -50,7 +51,11 @@ class CleaningAgent:
     it can be instantiated with zero configuration.
     """
 
-    async def run(self, web_data_list: list[CompetitorWebData]) -> list[CompetitorCleanData]:
+    async def run(
+        self,
+        web_data_list: list[CompetitorWebData],
+        stream_cb: Callable[[dict], None] | None = None,
+    ) -> list[CompetitorCleanData]:
         """Clean and normalize a list of raw scraped competitor records.
 
         Processes every item synchronously (CPU-bound text ops, not I/O) and
@@ -58,6 +63,9 @@ class CleaningAgent:
 
         Args:
             web_data_list: Raw structured data returned by WebAgent.
+            stream_cb: Optional callback receiving SSE-style ``token`` events
+                so the frontend Token output panel shows per-competitor
+                normalization progress.
 
         Returns:
             Parallel list of CompetitorCleanData ready for embedding / LLM use.
@@ -69,7 +77,25 @@ class CleaningAgent:
             input_summary=f"items={len(web_data_list)}",
         )
 
-        cleaned = [self._clean_one(wd) for wd in web_data_list]
+        def emit(line: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "token", "content": line})
+
+        emit(
+            f"→ Normalising {len(web_data_list)} scraped competitor records\n"
+            f"  ops: dedupe features · normalize whitespace · cap to 8 KB\n\n"
+        )
+
+        cleaned: list[CompetitorCleanData] = []
+        for i, wd in enumerate(web_data_list, 1):
+            cd = self._clean_one(wd)
+            cleaned.append(cd)
+            emit(
+                f"[{i}/{len(web_data_list)}] {wd.website or '(no url)'}\n"
+                f"    features={len(cd.clean_features)} · "
+                f"pricing={'yes' if cd.clean_pricing else 'no'} · "
+                f"normalized_text={len(cd.normalized_text)} chars\n"
+            )
 
         elapsed = time.perf_counter() - t0
         logger.info(
@@ -78,6 +104,7 @@ class CleaningAgent:
             execution_time=round(elapsed, 3),
             output_summary=f"cleaned={len(cleaned)} records",
         )
+        emit(f"\n✓ Cleaned {len(cleaned)} records in {round(elapsed, 2)}s\n")
         return cleaned
 
     @staticmethod

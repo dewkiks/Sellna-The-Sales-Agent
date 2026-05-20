@@ -27,6 +27,7 @@ Key dependencies:
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from uuid import UUID
 
 from app.core.logging import get_logger
@@ -74,12 +75,19 @@ class CompetitorAgent:
     def __init__(self) -> None:
         self._llm = get_llm_service()
 
-    async def run(self, analysis: CompanyAnalysis) -> list[CompetitorDiscovered]:
+    async def run(
+        self,
+        analysis: CompanyAnalysis,
+        stream_cb: Callable[[dict], None] | None = None,
+    ) -> list[CompetitorDiscovered]:
         """Identify real competitors for the analyzed company.
 
         Args:
             analysis: Output of DomainAgent — company name, category,
                       segments, buyer roles, positioning, geography.
+            stream_cb: Optional callback receiving SSE-style event dicts
+                (types: "token", "reasoning") so the frontend's Token
+                output panel can show the LLM thinking in real time.
 
         Returns:
             List of CompetitorDiscovered objects (typically 3–5), each with
@@ -95,15 +103,38 @@ class CompetitorAgent:
             input_summary=f"category={analysis.product_category}, segments={len(analysis.target_segments)}",
         )
 
+        def emit(line: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "token", "content": line})
+
+        emit(
+            f"→ Analysing {analysis.company_name} in the "
+            f"{analysis.product_category or 'B2B'} market\n"
+            f"→ {len(analysis.target_segments)} segments · "
+            f"{len(analysis.buyer_roles)} buyer roles\n"
+            f"→ Asking model for 3–5 real competitors...\n\n"
+        )
+
         user_prompt = self._build_prompt(analysis)
         messages = [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
 
+        def on_token(t: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "token", "content": t})
+
+        def on_reasoning(t: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "reasoning", "content": t})
+
         # temperature=0.3: low enough for factual recall, high enough to avoid
         # the model always returning the same top-3 names for every company.
-        raw = await self._llm.chat(messages, json_mode=True, temperature=0.3)
+        raw = await self._llm.chat(
+            messages, json_mode=True, temperature=0.3,
+            on_token=on_token, on_reasoning=on_reasoning,
+        )
         data = parse_llm_json(raw)
 
         competitors: list[CompetitorDiscovered] = []
@@ -124,6 +155,14 @@ class CompetitorAgent:
                 # Pydantic validation or missing required key — skip this item
                 # rather than failing the whole agent call.
                 logger.warning("competitor_agent.parse_error", error=str(e), item=item)
+
+        if competitors:
+            emit("\n\nParsed competitors:\n")
+            for c in competitors:
+                emit(
+                    f"  • {c.name} ({c.category}, score {c.relevance_score:.2f}) "
+                    f"— {c.website}\n"
+                )
 
         elapsed = time.perf_counter() - t0
         logger.info(

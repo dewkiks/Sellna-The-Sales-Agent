@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from uuid import UUID
 
 from app.core.logging import get_logger
@@ -83,6 +84,7 @@ class GapAnalysisAgent:
         self,
         analysis: CompanyAnalysis,
         clean_data_list: list[CompetitorCleanData],
+        stream_cb: Callable[[dict], None] | None = None,
     ) -> list[MarketGap]:
         """Identify market gaps by RAG-querying competitor intelligence.
 
@@ -90,6 +92,9 @@ class GapAnalysisAgent:
             analysis: CompanyAnalysis from DomainAgent — used to build the
                       gap query and the ``gap_<company_id>`` collection name.
             clean_data_list: Normalized competitor records from CleaningAgent.
+            stream_cb: Optional callback receiving SSE-style ``token`` /
+                ``reasoning`` events so the frontend Token output panel
+                shows chunking, embedding, retrieval and LLM progress live.
 
         Returns:
             List of MarketGap objects (typically 2–4), each with a type,
@@ -100,11 +105,21 @@ class GapAnalysisAgent:
         company_id = analysis.company_id
         collection = f"gap_{company_id}"
 
+        def emit(line: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "token", "content": line})
+
         logger.info(
             "gap_analysis_agent.start",
             module_name="GapAnalysisAgent",
             company=analysis.company_name,
             input_summary=f"competitor_docs={len(clean_data_list)}",
+        )
+
+        emit(
+            f"→ Gap analysis for {analysis.company_name}\n"
+            f"  collection: {collection}\n"
+            f"  input docs: {len(clean_data_list)}\n\n"
         )
 
         # ---- Index: chunk and upsert competitor text into Qdrant ----
@@ -120,8 +135,21 @@ class GapAnalysisAgent:
             chunk_size = 2500
             for i in range(0, len(text), chunk_size):
                 documents.append(text[i : i + chunk_size + 200])
+        total_chars = sum(len(d) for d in documents)
+        emit(
+            f"→ Chunking competitor text → {len(documents)} chunks "
+            f"({total_chars} chars total, ~2500/chunk)\n"
+        )
         if documents:
+            emit(f"→ Embedding & indexing into Qdrant collection '{collection}'...\n")
+            t_idx = time.perf_counter()
             await self._rag.index_documents(collection, documents)
+            emit(
+                f"✓ Indexed {len(documents)} chunks in "
+                f"{round(time.perf_counter() - t_idx, 2)}s\n\n"
+            )
+        else:
+            emit("⚠ No documents to index — gap analysis will rely on LLM priors only\n\n")
 
         # ---- Query: single broad RAG call covers all three gap types ----
         # One query (rather than three separate ones) is a deliberate latency
@@ -134,12 +162,27 @@ class GapAnalysisAgent:
             f"Company context: {company_context}"
         )
 
+        emit(
+            f"→ Retrieving top-3 chunks for gap query\n"
+            f"→ Asking model to identify 2–4 gaps from retrieved context...\n\n"
+        )
+
+        def on_token(t: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "token", "content": t})
+
+        def on_reasoning(t: str) -> None:
+            if stream_cb:
+                stream_cb({"type": "reasoning", "content": t})
+
         raw = await self._rag.query(
             collection=collection,
             question=gap_query,
             system_prompt=_SYSTEM_GAP,
             top_k=3,
             json_mode=True,
+            on_token=on_token,
+            on_reasoning=on_reasoning,
         )
 
         data = parse_llm_json(raw)

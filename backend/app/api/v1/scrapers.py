@@ -26,6 +26,7 @@ from __future__ import annotations
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 # ---- sys.path fixup ----
 # extractor, scraper, and scrapping_module live at the project root, not
@@ -36,7 +37,9 @@ _project_root = str(Path(__file__).parents[3].resolve())
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
+import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.core.dependencies import DbSession
@@ -177,6 +180,68 @@ async def scrape_social(payload: SocialScrapeRequest) -> dict:
         "profile": data if success else {},
         "raw": data,
     }
+
+
+# Social-media CDNs the image proxy is allowed to fetch from. Restricting the
+# proxy to these hosts keeps it from being abused as an open SSRF relay.
+_IMAGE_PROXY_HOSTS = ("cdninstagram.com", "fbcdn.net", "licdn.com")
+_IMAGE_PROXY_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "Referer": "https://www.instagram.com/",
+}
+
+
+def _image_host_allowed(host: str) -> bool:
+    """True only for the allowed CDN hosts themselves or their subdomains."""
+    host = host.lower()
+    return any(host == h or host.endswith("." + h) for h in _IMAGE_PROXY_HOSTS)
+
+
+@router.get(
+    "/image-proxy",
+    summary="Relay a social-CDN image past hotlink protection",
+)
+async def image_proxy(url: str) -> Response:
+    """GET /scrapers/image-proxy?url=<social CDN image URL>
+
+    Instagram and LinkedIn hotlink-protect their image CDNs, so the browser
+    cannot load scraped avatar / post images directly (they 403 or return a
+    blank response). The server fetches the image — CDNs allow server-side
+    requests — and relays the bytes from the API's own origin.
+
+    Restricted to known social-media CDN hosts so the endpoint cannot be used
+    as an open SSRF relay against arbitrary internal/external URLs.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not _image_host_allowed(
+        parsed.hostname or ""
+    ):
+        raise HTTPException(
+            status_code=400, detail="URL host is not an allowed image CDN"
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url, headers=_IMAGE_PROXY_HEADERS)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Image fetch failed: {exc}")
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502, detail=f"Image CDN returned HTTP {resp.status_code}"
+        )
+
+    return Response(
+        content=resp.content,
+        media_type=resp.headers.get("content-type", "image/jpeg"),
+        # Scraped image URLs are immutable for their (short) lifetime — let the
+        # browser cache the proxied bytes for a day.
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get(
